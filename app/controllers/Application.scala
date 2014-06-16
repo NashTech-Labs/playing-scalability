@@ -1,23 +1,16 @@
 package controllers
 
-import java.util.concurrent.TimeoutException
-import scala.concurrent.Future
-import scala.concurrent.duration._
 import models._
 import play.api._
+import play.api.Play.current
 import play.api.data._
 import play.api.data.Forms._
-import play.api.libs.concurrent.Execution.Implicits.defaultContext
-import play.api.libs.concurrent.Promise
 import play.api.mvc._
 import views._
 import play.api.cache.Cached
-import play.api.Play.current
 
 object Application extends Controller {
-
-  implicit val timeout = 10.seconds
-
+  
   /**
    * Describe the book form (used in both edit and create screens).
    */
@@ -46,41 +39,19 @@ object Application extends Controller {
    * @param orderBy Column to be sorted
    * @param filter Filter applied on book names
    */
-  def list(page: Int, orderBy: Int, filter: String) = Action.async { implicit request =>
-    val futurePage: Future[Page[Book]] = TimeoutFuture(Book.list(page = page, orderBy = orderBy, filter = ("%" + filter + "%")))
-    futurePage.map(page => Ok(html.list(page, orderBy, filter))).recover {
-      case t: TimeoutException =>
-        Logger.error("Problem found in book list process")
-        InternalServerError(t.getMessage)
-    }
+  def list(page: Int, orderBy: Int, filter: String) = Action { implicit request =>
+    val pageData: Page[Book] = Book.list(page = page, orderBy = orderBy, filter = ("%" + filter + "%"))
+    Ok(html.list(pageData, orderBy, filter))
   }
 
   /**
-   * Display the paginated list of books (cached + asynchronous + non-blocking).
+   * Display the paginated cachedList of books (cached + synchronous + blocking).
    *
    * @param page Current page number (starts from 0)
    * @param orderBy Column to be sorted
    * @param filter Filter applied on book names
    */
-  def asynchronousCached(page: Int, orderBy: Int, filter: String) = Cached("asynchronous") {
-    Action.async { implicit request =>
-      val futurePage: Future[Page[Book]] = TimeoutFuture(Book.list(page = page, orderBy = orderBy, filter = ("%" + filter + "%")))
-      futurePage.map(page => Ok(html.list(page, orderBy, filter))).recover {
-        case t: TimeoutException =>
-          Logger.error("Problem found in book list process")
-          InternalServerError(t.getMessage)
-      }
-    }
-  }
-
-  /**
-   * Display the paginated list of books (cached + synchronous + blocking).
-   *
-   * @param page Current page number (starts from 0)
-   * @param orderBy Column to be sorted
-   * @param filter Filter applied on book names
-   */
-  def synchronousCached(page: Int, orderBy: Int, filter: String) = Cached("synchronous") {
+  def cachedList(page: Int, orderBy: Int, filter: String) = Cached("cached").default(5) {
     Action { implicit request =>
       val books = Book.list(page = page, orderBy = orderBy, filter = ("%" + filter + "%"))
       Ok(html.list(books, orderBy, filter))
@@ -88,31 +59,14 @@ object Application extends Controller {
   }
 
   /**
-   * Display the paginated list of books (cached + synchronous + blocking).
-   *
-   * @param page Current page number (starts from 0)
-   * @param orderBy Column to be sorted
-   * @param filter Filter applied on book names
-   */
-  def synchronous(page: Int, orderBy: Int, filter: String) = Action { implicit request =>
-    val books = Book.list(page = page, orderBy = orderBy, filter = ("%" + filter + "%"))
-    Ok(html.list(books, orderBy, filter))
-  }
-
-  /**
    * Display the 'edit form' of a existing book.
    *
    * @param id Id of the book to edit
    */
-  def edit(id: Long) = Action.async {
-    val futureEmp: Future[Option[Book]] = TimeoutFuture(Book.findById(id))
-    futureEmp.map {
+  def edit(id: Long) = Action {
+    Book.findById(id) match {
       case Some(book) => Ok(html.editForm(id, bookForm.fill(book)))
       case None       => NotFound
-    }.recover {
-      case t: TimeoutException =>
-        Logger.error("Problem found in book edit process")
-        InternalServerError(t.getMessage)
     }
   }
 
@@ -121,17 +75,13 @@ object Application extends Controller {
    *
    * @param id Id of the book to edit
    */
-  def update(id: Long) = Action.async { implicit request =>
+  def update(id: Long) = Action { implicit request =>
     bookForm.bindFromRequest.fold(
-      formWithErrors => Future.successful(BadRequest(html.editForm(id, formWithErrors))),
+      formWithErrors => BadRequest(html.editForm(id, formWithErrors)),
       book => {
-        val futureUpdateEmp: Future[Int] = TimeoutFuture(Book.update(id, book))
-        futureUpdateEmp.map { bookId =>
-          Home.flashing("success" -> s"Book ${book.name} has been updated")
-        }.recover {
-          case t: TimeoutException =>
-            Logger.error("Problem found in book update process")
-            InternalServerError(t.getMessage)
+        Book.update(id, book) > 0 match {
+          case true  => Home.flashing("success" -> s"Book ${book.name} has been updated")
+          case false => Home.flashing("error" -> "Problem found in book update process")
         }
       })
   }
@@ -146,24 +96,17 @@ object Application extends Controller {
   /**
    * Handle the 'new employee form' submission.
    */
-  def save = Action.async { implicit request =>
+  def save = Action { implicit request =>
     bookForm.bindFromRequest.fold(
-      formWithErrors => Future.successful(BadRequest(html.createForm(formWithErrors))),
+      formWithErrors => BadRequest(html.createForm(formWithErrors)),
       book => {
-        val futureUpdateEmp: Future[Option[Long]] = TimeoutFuture(Book.insert(book))
-        futureUpdateEmp.map {
+        Book.insert(book) match {
           case Some(bookId) =>
             val msg = s"Book ${book.name} has been created"
-            Logger.info(msg)
             Home.flashing("success" -> msg)
           case None =>
             val msg = s"Book ${book.name} has not created"
-            Logger.info(msg)
             Home.flashing("error" -> msg)
-        }.recover {
-          case t: TimeoutException =>
-            Logger.error("Problem found in Book update process")
-            InternalServerError(t.getMessage)
         }
       })
   }
@@ -171,28 +114,10 @@ object Application extends Controller {
   /**
    * Handle book deletion.
    */
-  def delete(id: Long) = Action.async {
-    val futureInt = TimeoutFuture(Book.delete(id))
-    futureInt.map(i => Home.flashing("success" -> "Book has been deleted")).recover {
-      case t: TimeoutException =>
-        Logger.error("Problem deleting book")
-        InternalServerError(t.getMessage)
-    }
-  }
-
-  object TimeoutFuture {
-
-    def apply[A](block: => A)(implicit timeout: FiniteDuration): Future[A] = {
-
-      val promise = scala.concurrent.Promise[A]()
-
-      // if the promise doesn't have a value yet then this completes the future with a failure
-      Promise.timeout(Nil, timeout).map(_ => promise.tryFailure(new TimeoutException("This operation timed out")))
-
-      // this tries to complete the future with the value from block
-      Future(promise.success(block))
-
-      promise.future
+  def delete(id: Long) = Action {
+    Book.delete(id) > 0 match {
+      case true  => Home.flashing("success" -> "Book has been deleted")
+      case false => Home.flashing("error" -> "Book not found for the given id.")
     }
 
   }
