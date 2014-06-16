@@ -1,0 +1,4 @@
+# Messages
+app.name=Book Store
+
+book.list.title={0,choice,0#No book|1#One book|1<{0,number,integer} book} found

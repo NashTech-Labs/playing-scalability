@@ -1,0 +1,10 @@
+@(bookForm: Form[Book])
+
+@import helper._
+
+@implicitFieldConstructor = @{ FieldConstructor(twitterBootstrapInput.f) }
+
+@inputText(bookForm("name"), '_label -> "Name", 'class -> "form-control")
+@inputText(bookForm("author"), '_label -> "Author", 'class -> "form-control")
+@inputText(bookForm("publishDate"), '_label -> "Publish Date", 'class -> "form-control")
+@inputText(bookForm("description"), '_label -> "Description", 'class -> "form-control")
