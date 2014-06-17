@@ -45,7 +45,7 @@ object Application extends Controller {
   }
 
   /**
-   * Display the paginated cachedList of books (cached + synchronous + blocking).
+   * Cache the result on the server, so the underlying action is not computed at each call.
    *
    * @param page Current page number (starts from 0)
    * @param orderBy Column to be sorted
